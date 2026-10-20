@@ -1,0 +1,17 @@
+{
+    "name": "stremio-sync-relay",
+    "version": "0.1.0",
+    "private": true,
+    "description": "WebSocket relay that passes playback-sync and chat messages between Stremio devices",
+    "scripts": {
+        "dev": "wrangler dev",
+        "test": "node test/smoke.mjs",
+        "check": "tsc --noEmit",
+        "types": "wrangler types",
+        "deploy": "wrangler deploy"
+    },
+    "devDependencies": {
+        "typescript": "5.9.3",
+        "wrangler": "4.147.0"
+    }
+}

@@ -1,0 +1,16 @@
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "stremio-sync-relay",
+    "main": "src/index.ts",
+    "compatibility_date": "2026-09-25",
+    "durable_objects": {
+        "bindings": [
+            // One Room object per room name; env.ROOMS looks them up.
+            { "name": "ROOMS", "class_name": "Room" }
+        ]
+    },
+    "migrations": [
+        // The Workers free plan only supports SQLite-backed Durable Objects.
+        { "tag": "v1", "new_sqlite_classes": ["Room"] }
+    ]
+}

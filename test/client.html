@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relay Test Client</title>
+<style>
+    :root {
+        --bg: #f4f6f5; --surface: #ffffff; --fg: #16201d; --muted: #59655f;
+        --line: #d6ddd9; --accent: #0d7466; --mine: #dcefeb; --system: #e8ecea; --error: #a3342b;
+        color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --bg: #0e1312; --surface: #151c1a; --fg: #e3eae7; --muted: #95a39d;
+            --line: #27322f; --accent: #45c2ae; --mine: #143430; --system: #1e2624; --error: #ef8a7f;
+            color-scheme: dark;
+        }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 16px; }
+    h1 { margin: 0; font-size: 1.4rem; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--muted); flex: 1 1 140px; }
+    input, button { font: inherit; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
+    button { background: var(--accent); color: var(--surface); border-color: var(--accent); cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    #status { font-size: 0.9rem; color: var(--muted); }
+    #status.on { color: var(--accent); font-weight: 600; }
+    #log { list-style: none; margin: 0; padding: 12px; min-height: 240px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
+    #log li { padding: 6px 10px; border-radius: 6px; background: var(--system); }
+    #log li.mine { background: var(--mine); align-self: end; }
+    #log li.error { color: var(--error); }
+    #log .who { font-weight: 600; }
+    #log .raw { display: block; font: 0.75rem/1.4 Consolas, monospace; color: var(--muted); }
+    form { display: flex; gap: 8px; }
+    form input { flex: 1; min-width: 0; }
+</style>
+</head>
+<body>
+<main>
+    <h1>Relay Test Client</h1>
+    <p>Open this page in two windows, connect both to the same room, and send a message.</p>
+
+    <div class="row">
+        <label>Relay <input id="relay" value="ws://127.0.0.1:8787"></label>
+        <label>Room <input id="room" value="test"></label>
+        <label>Device name <input id="device" value="Window 1"></label>
+        <button id="toggle" type="button">Connect</button>
+    </div>
+    <div id="status">Not connected</div>
+
+    <ul id="log" aria-live="polite"></ul>
+
+    <form id="send">
+        <input id="text" placeholder="Type a message" autocomplete="off" disabled>
+        <button id="sendButton" disabled>Send</button>
+    </form>
+</main>
+<script>
+    const $ = (id) => document.getElementById(id);
+    let ws = null;
+
+    // Give each window a different default name.
+    $('device').value = `Window ${Math.floor(Math.random() * 90) + 10}`;
+
+    function log(text, kind = '', raw = '') {
+        const li = document.createElement('li');
+        li.className = kind;
+        li.textContent = text;
+        if (raw) {
+            const pre = document.createElement('span');
+            pre.className = 'raw';
+            pre.textContent = raw;
+            li.append(pre);
+        }
+        $('log').append(li);
+        li.scrollIntoView({ block: 'nearest' });
+    }
+
+    function setConnected(on, label) {
+        $('status').textContent = label;
+        $('status').className = on ? 'on' : '';
+        $('toggle').textContent = on ? 'Disconnect' : 'Connect';
+        $('text').disabled = $('sendButton').disabled = !on;
+        if (on) $('text').focus();
+    }
+
+    function describe(msg) {
+        switch (msg.type) {
+            case 'welcome': return `Joined as "${msg.you.name}". Already here: ${msg.devices.map((d) => d.name).join(', ') || 'nobody'}`;
+            case 'device-joined': return `${msg.device.name} joined`;
+            case 'device-left': return `${msg.device.name} left`;
+            case 'error': return `Relay error: ${msg.message}`;
+            case 'chat': return null;
+            default: return `${msg.from?.name ?? 'Relay'} sent "${msg.type}"`;
+        }
+    }
+
+    $('toggle').addEventListener('click', () => {
+        if (ws) { ws.close(1000); return; }
+        const url = `${$('relay').value.replace(/\/$/, '')}/room/${encodeURIComponent($('room').value)}?device=${encodeURIComponent($('device').value)}`;
+        setConnected(false, 'Connecting…');
+        ws = new WebSocket(url);
+        ws.addEventListener('open', () => setConnected(true, `Connected to room "${$('room').value}"`));
+        ws.addEventListener('message', (event) => {
+            let msg;
+            try { msg = JSON.parse(event.data); } catch { return log(event.data, '', 'raw text'); }
+            if (msg.type === 'chat') {
+                const li = document.createElement('li');
+                li.innerHTML = '<span class="who"></span>: <span class="body"></span>';
+                li.querySelector('.who').textContent = msg.from?.name ?? '?';
+                li.querySelector('.body').textContent = msg.text;
+                $('log').append(li);
+                li.scrollIntoView({ block: 'nearest' });
+            } else {
+                log(describe(msg), msg.type === 'error' ? 'error' : '', event.data);
+            }
+        });
+        ws.addEventListener('close', (event) => {
+            ws = null;
+            setConnected(false, event.code === 1000 ? 'Disconnected' : `Connection closed (code ${event.code}). Is "npm run dev" running?`);
+        });
+    });
+
+    $('send').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const text = $('text').value.trim();
+        if (!ws || !text) return;
+        ws.send(JSON.stringify({ type: 'chat', text }));
+        log(text, 'mine');
+        $('text').value = '';
+    });
+</script>
+</body>
+</html>
